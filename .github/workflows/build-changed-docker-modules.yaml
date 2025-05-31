@@ -3,16 +3,16 @@ name: build-changed-docker-modules
 on:
   workflow_call:
     inputs:
-      role-to-assume:
-        description: 'The IAM role to assume for AWS actions'
+      aws-account-id:
+        description: 'The AWS account ID for the ECR registry'
         required: true
         type: string
       aws-region:
         description: 'The AWS region for the actions'
         required: true
         type: string
-      ecr-registry:
-        description: 'The ECR registry URL'
+      aws-role-to-assume:
+        description: 'The IAM role to assume for AWS actions'
         required: true
         type: string
 
@@ -98,7 +98,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ inputs.role-to-assume }}
+          role-to-assume: ${{ inputs.aws-role-to-assume }}
           aws-region: ${{ inputs.aws-region }}
 
       - name: Login to Amazon ECR
@@ -111,4 +111,4 @@ jobs:
           platforms: linux/arm64
           provenance: false
           push: true
-          tags: ${{ inputs.ecr-registry}}/${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.commit_hash }}
+          tags: ${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com/${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.commit_hash }}
