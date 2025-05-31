@@ -15,6 +15,11 @@ on:
         description: 'The IAM role to assume for AWS actions'
         required: true
         type: string
+      docker-platforms:
+        description: 'Docker platforms to build for'
+        required: false
+        type: string
+        default: 'linux/arm64'
 
 jobs:
   detect-changes:
@@ -108,7 +113,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./${{ matrix.modules }}
-          platforms: linux/arm64
+          platforms: ${{ inputs.docker-platforms }}
           provenance: false
           push: true
           tags: ${{ inputs.aws-account-id }}.dkr.ecr.${{ inputs.aws-region }}.amazonaws.com/${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.commit_hash }}
