@@ -1,0 +1,60 @@
+name: detect-changes-build
+
+on:
+  workflow_call:
+    # Map the workflow outputs to job outputs
+    outputs:
+      changed_modules:
+        description: 'List of changed modules'
+        value: ${{ jobs.detect-changes.output.changed_modules }}
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    # Map the job outputs to the step outputs
+    outputs:
+      changed_modules: ${{ steps.set.outputs.changed_modules }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed to get full commit history
+
+      - name: Determine merge-base
+        id: base
+        run: |
+          git fetch origin main
+
+          BASE_COMMIT=$(git merge-base origin/main HEAD)
+          echo "Base commit: $BASE_COMMIT"
+          echo "base_commit=$BASE_COMMIT" >> $GITHUB_OUTPUT
+
+      - name: Detect changed modules
+        id: set
+        run: |
+          CHANGED=$(git diff --name-only ${{ steps.base.outputs.base_commit }} HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+          
+          MODULES=()
+
+          for dir in */; do
+            if [ -f "$dir/.dockerimage" ]; then
+              if echo "$CHANGED" | grep -q "^$dir"; then
+                MODULES+=("${dir%/}")
+              fi
+            fi
+          done
+
+          MODULES_LIST=$(IFS=, ; echo "${MODULES[*]}")
+
+          # Convert comma-separated MODULES_LIST to JSON array
+          if [ -z "$MODULES_LIST" ]; then
+            MODULES_LIST_JSON="[]"
+          else
+            MODULES_LIST_JSON=$(printf '["%s"]' "$(echo "$MODULES_LIST" | sed 's/,/","/g')")
+          fi
+
+          echo "Changed modules: $MODULES_LIST_JSON"
+          echo "changed_modules=$MODULES_LIST_JSON" >> $GITHUB_OUTPUT
