@@ -1,0 +1,114 @@
+name: build-changed-docker-modules
+
+on:
+  workflow_call:
+    inputs:
+      role-to-assume:
+        description: 'The IAM role to assume for AWS actions'
+        required: true
+        type: string
+      aws-region:
+        description: 'The AWS region for the actions'
+        required: true
+        type: string
+      ecr-registry:
+        description: 'The ECR registry URL'
+        required: true
+        type: string
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      changed_modules: ${{ steps.set.outputs.changed_modules }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Needed to get full commit history
+
+      - name: Determine merge-base
+        id: base
+        run: |
+          git fetch origin main
+
+          BASE_COMMIT=$(git merge-base origin/main HEAD)
+          echo "Base commit: $BASE_COMMIT"
+          echo "base_commit=$BASE_COMMIT" >> $GITHUB_OUTPUT
+
+      - name: Detect changed modules
+        id: set
+        run: |
+          CHANGED=$(git diff --name-only ${{ steps.base.outputs.base_commit }} HEAD)
+          echo "Changed files:"
+          echo "$CHANGED"
+          
+          MODULES=()
+
+          for dir in */; do
+            if [ -f "$dir/.dockerimage" ]; then
+              if echo "$CHANGED" | grep -q "^$dir"; then
+                MODULES+=("${dir%/}")
+              fi
+            fi
+          done
+
+          MODULES_LIST=$(IFS=, ; echo "${MODULES[*]}")
+
+          # Convert comma-separated MODULES_LIST to JSON array
+          if [ -z "$MODULES_LIST" ]; then
+            MODULES_LIST_JSON="[]"
+          else
+            MODULES_LIST_JSON=$(printf '["%s"]' "$(echo "$MODULES_LIST" | sed 's/,/","/g')")
+          fi
+
+          echo "Changed modules: $MODULES_LIST_JSON"
+          echo "changed_modules=$MODULES_LIST_JSON" >> $GITHUB_OUTPUT
+
+  build-modules:
+    name: Build modules
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.changed_modules != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        modules: ${{ fromJson(needs.detect-changes.outputs.changed_modules) }}
+    steps:     
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Read image name from .dockerimage file
+        id: meta
+        run: |
+            COMMIT_HASH=$(git rev-parse --short=7 HEAD)
+            echo "Commit hash: $COMMIT_HASH"
+            echo "commit_hash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+
+            IMAGE=$(head -n 1 "${{ matrix.modules }}/.dockerimage" | tr -d '\r\n')
+            echo "Image name: $IMAGE"
+            echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.role-to-assume }}
+          aws-region: ${{ inputs.aws-region }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag and push Docker dev image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./${{ matrix.modules }}
+          platforms: linux/arm64
+          provenance: false
+          push: true
+          tags: ${{ inputs.ecr-registry}}/${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.commit_hash }}
