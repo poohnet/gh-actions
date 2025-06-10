@@ -1,0 +1,23 @@
+name: 'Say Hello'
+description: 'A simple composite action to greet a user'
+
+inputs:
+  username:
+    description: 'Name of the person to greet'
+    required: true
+    default: 'world'
+
+outputs:
+  message:  
+    description: 'The greeting message'
+    value: ${{ steps.greet.outputs.message }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Generate message
+      id: greet
+      shell: bash
+      run: |
+        echo "Hello, ${{ inputs.username }}!"
+        echo "message=Hello, ${{ inputs.username }}!" >> $GITHUB_OUTPUT
