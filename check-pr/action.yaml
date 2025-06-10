@@ -2,9 +2,6 @@ name: 'check-pr'
 description: 'A composite action to check if an open pull request exists'
 
 inputs:
-  base_branch:
-    description: 'Base branch to check for open pull requests'
-    required: true
   head_branch:
     description: 'Head branch to check for open pull requests'
     required: true
@@ -13,6 +10,9 @@ inputs:
     required: true
 
 outputs:
+  base_branch:
+    description: 'The base branch against which the pull request is checked'
+    value: ${{ steps.base.outputs.base_branch }}
   pr_number:
     description: 'The number of the open pull request or an empty string if none exists'
     value: ${{ steps.check.outputs.pr_number }}
@@ -20,11 +20,21 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Get base branch
+      id: base
+      shell: bash
+      run: |
+        if [ "${{ inputs.head_branch }}" == "next" ]; then
+          echo "base_branch=main" >> $GITHUB_OUTPUT
+        else
+          echo "base_branch=next" >> $GITHUB_OUTPUT
+        fi
+
     - name: Check for open pull requests
       id: check
       shell: bash
       run: |
-        pr_number=$(gh pr list --state open --base ${{ inputs.base_branch }} --head ${{ inputs.head_branch }} --json number --jq '.[0].number')
+        pr_number=$(gh pr list --state open --base ${{ steps.base.outputs.base_branch }} --head ${{ inputs.head_branch }} --json number --jq '.[0].number')
         if [ -z "$pr_number" ]; then
           echo "No open pull requests found."
           echo "pr_number=" >> $GITHUB_OUTPUT
